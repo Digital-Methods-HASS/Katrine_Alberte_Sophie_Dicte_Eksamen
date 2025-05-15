@@ -1,1 +1,0 @@
-This file originated at https://www.imls.gov/research-evaluation/data-collection/public-libraries-survey but has been modified (dirtied) for the purposes of this Intro to Data Regex exercise. 
