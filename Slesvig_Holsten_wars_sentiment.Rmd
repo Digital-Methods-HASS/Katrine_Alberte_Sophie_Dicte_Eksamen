@@ -1,0 +1,288 @@
+---
+title: "Schleswig-Holstein Wars Sentiment"
+author: "Dicte Mikkelsen, Alberte Thomsen, Sophie Løbner & Katrine Pedersen"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+# Overview 
+This project performs sentiment analysis on Danish newspaper articles related to the **Schleswig-Holstein Wars (1848–1851 and 1864–1865)**. Using historical newspaper texts from the Danish State Library and two sentiment lexicons (a custom Danish dictionary and AFINN-da), we analyze trends in public sentiment during both conflicts.
+
+This document serves as a **guided technical walkthrough** of our pipeline and is fully reproducible.
+
+We cover:
+- **Data collection** from the Danish State Library API  
+- **Text preprocessing and tokenization**  
+- **Sentiment analysis** using a custom Danish dictionary and AFINN-da  
+- **Visualization and interpretation** of the results
+
+## 1. Setup
+We begin by loading required libraries
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      warning = FALSE,
+                      message = FALSE)
+
+# Load necessary packages
+library(tidyverse)
+library(here)
+library(pdftools)
+library(tidytext)
+library(textdata) 
+library(ggwordcloud)
+library(ggplot2)
+library(readr)
+library(lubridate)
+```
+
+# 2. Load Danish Sotpwords
+We use a list of nineteenthcentury Danish stopwords compiled by Max Odsbjerg. These are filtered out during text processing:
+```{r load_stopwords, echo=FALSE}
+
+# Loading stopwords (from Max Odsbjerg)
+stopword_1800 <- read_csv("https://gist.githubusercontent.com/maxodsbjerg/1537cf14c3d46b3d30caa5d99f8758e9/raw/9f044a38505334f035be111c9a3f654a24418f6d/stopord_18_clean.csv")
+```
+
+# 3. Load Newspaper Data (Danish State Library)
+We collect article metadata and full text from the Danish State Library Labs API:
+```{r load_newspaper_data, echo=FALSE}
+# API links for diffrent periods
+
+link48_51 <- "https://labs.statsbiblioteket.dk/labsapi/api/aviser/export/fields?query=Slesvig%20AND%20krig%20py%3A%5B1848%20TO%201851%5D&fields=link&fields=recordID&fields=timestamp&fields=pwa&fields=cer&fields=fulltext_org&fields=pageUUID&fields=editionUUID&fields=titleUUID&fields=editionId&fields=familyId&fields=newspaper_page&fields=newspaper_edition&fields=lplace&fields=location_name&fields=location_coordinates&max=-1&structure=header&structure=content&format=CSV"
+
+link64_65 <- "https://labs.statsbiblioteket.dk/labsapi/api/aviser/export/fields?query=Slesvig%20AND%20krig%20py%3A%5B1864%20TO%201865%5D&fields=link&fields=recordID&fields=timestamp&fields=pwa&fields=cer&fields=fulltext_org&fields=pageUUID&fields=editionUUID&fields=titleUUID&fields=editionId&fields=familyId&fields=newspaper_page&fields=newspaper_edition&fields=lplace&fields=location_name&fields=location_coordinates&max=-1&structure=header&structure=content&format=CSV"
+
+link48_65 <- "https://labs.statsbiblioteket.dk/labsapi/api/aviser/export/fields?query=Slesvig%20AND%20krig%20py%3A%5B1848%20TO%201865%5D&fields=link&fields=recordID&fields=timestamp&fields=pwa&fields=cer&fields=fulltext_org&fields=pageUUID&fields=editionUUID&fields=titleUUID&fields=editionId&fields=familyId&fields=newspaper_page&fields=newspaper_edition&fields=lplace&fields=location_name&fields=location_coordinates&max=-1&structure=header&structure=content&format=CSV"
+
+schleswig_1848_51 <- read_csv(link48_51)
+
+schleswig_1864_65 <- read_csv(link64_65)
+
+schleswig_1848_65 <- read_csv(link48_65)
+```
+
+
+# 4. Text Preprocessing
+We normalize text, tokenize, and remove stopwords:
+```{r preprocess_text, echo=FALSE}
+schleswig_tidy_1848_51 <- schleswig_1848_51 %>%
+  mutate(fulltext_org=str_squish(str_to_lower(fulltext_org))) %>% 
+  unnest_tokens(word, fulltext_org) %>%
+  anti_join(stopword_1800)
+
+schleswig_tidy_1864_65 <- schleswig_1864_65 %>%
+  mutate(fulltext_org=str_squish(str_to_lower(fulltext_org))) %>%
+  unnest_tokens(word, fulltext_org) %>% 
+  anti_join(stopword_1800)
+
+schleswig_tidy_1848_65 <- schleswig_1848_65 %>%
+  mutate(fulltext_org=str_squish(str_to_lower(fulltext_org))) %>% 
+  unnest_tokens(word, fulltext_org) %>% 
+  anti_join(stopword_1800)
+```
+
+# 5. Sentiment Analysis Using the Custom Danish Lexicon
+We use a custom Danish sentiment dictionary, published by the Society for Danish Language and Literature and the Center for Language Technology (University of Copenhagen), hosted in the github repository linked below in section 11.
+```{r sentiment_analysis_dansih_dictionary, echo=TRUE}
+# Load Danish sentiment dictionary
+danish_lexicon <- read_csv("https://raw.githubusercontent.com/dsldk/danish-sentiment-lexicon/refs/heads/main/2_headword_headword_polarity.csv")
+colnames(danish_lexicon) <- c("headword","homograph_number", "POS", "DDO_headword_ID", "polarity_label_headword", "list_of_word_forms")
+
+# Match words to sentiment using the Danish dictionary
+sentiment_danish_result <- schleswig_tidy_1848_65 %>% 
+  inner_join(danish_lexicon, by = c("word" = "headword")) %>% 
+  group_by(recordID) %>% 
+  summarise(sentiment_score = sum(polarity_label_headword, na.rm = TRUE))
+
+```
+# 6. Merge Sentiment Scores with Timestamps
+We merge the sentiment scores with publication dates:
+```{r timestamp}
+# Timestamps are in date format
+schleswig_tidy_1848_65 <- schleswig_tidy_1848_65 %>% 
+  mutate(date = as_date(timestamp))
+
+# Join sentiment scores with dates
+sentiment_plotdata_danish <- sentiment_danish_result %>%
+  left_join(schleswig_tidy_1848_65 %>% select(recordID, date), by ="recordID")
+```
+
+# 7. Monthly Sentiment Trends (Danish Lexicon)
+We compare montly sentiment scores by war:
+```{r ad_info_to_data}
+# Add information to the datasets
+schleswig_tidy_1848_51 <- schleswig_tidy_1848_51 %>%
+  mutate(war = "1848-1851", timestamp = ymd_hms(timestamp), month = floor_date(timestamp, "month"))
+
+schleswig_tidy_1864_65 <- schleswig_tidy_1864_65 %>%
+  mutate(war = "1864-1865", timestamp = ymd_hms(timestamp), month = floor_date(timestamp, "month"))
+
+# Combine the two datasets
+combined_sentiment_data_danish <- bind_rows(schleswig_tidy_1848_51, schleswig_tidy_1864_65)
+
+# Look up in sentiment dictionary and calculate sentiment score
+combined_sentiment_scores_danish <- combined_sentiment_data_danish %>%
+  inner_join(danish_lexicon, by = c("word" = "headword")) %>%
+  group_by(month, war) %>%
+  summarise(sentiment_score = sum(polarity_label_headword, na.rm = TRUE), .groups = "drop")
+```
+
+
+```{r visualize}
+# Visualization of sentiment comparison between the two periods
+ggplot(combined_sentiment_scores_danish, aes(x = month, y = sentiment_score, color = war)) +
+  geom_line(size = 1.2) +
+  geom_point(size = 1.5) +
+  labs(
+    title = "Comparison of Monthly Sentiment Score for the Schleswig Wars",
+    subtitle = "Calculated using the Danish sentiment lexicon",
+    x = "Month",
+    y = "Sentiment-score",
+    color = "War Period"
+  ) +
+  theme_minimal() +
+  scale_color_manual(values = c("1848-1851" = "midnightblue", "1864-1865" = "firebrick1")) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+# 8. Sentiment Analysis Using AFINN-da
+We also apply AFINN-da, sourced from: Github(https://raw.githubusercontent.com/fnielsen/afinn/master/afinn/data/AFINN-da-32.txt).
+```{r sentiment_afinn_dictionary, echo=TRUE}
+url <- "https://raw.githubusercontent.com/fnielsen/afinn/master/afinn/data/AFINN-da-32.txt"
+afinn_da <- read_delim(url, delim = "\t", col_names = c("word", "score"))
+# Match words to sentiment using the AFINN-da dictionary
+schleswig_tidy_1848_65_afinn <- schleswig_tidy_1848_65 %>% 
+  inner_join(afinn_da, by = "word") %>% 
+  group_by(recordID) %>%
+  summarise(sentiment_score = sum(score), .groups = "drop")
+```
+We compute sentiment over time for all data:
+
+```{r calculate_monthly_sentiment}
+schleswig_tidy_1848_65 <- schleswig_tidy_1848_65 %>% 
+  mutate(word = str_replace_all(word, "[[:punct:]]", ""))
+
+schleswig_sentiment_monthly <- schleswig_tidy_1848_65 %>%
+  mutate(timestamp = ymd_hms(timestamp),
+         month = floor_date(timestamp, "month")) %>%
+  inner_join(afinn_da, by = "word") %>%
+  group_by(month) %>%
+  summarise(sentiment_score = sum(score), .groups = "drop")
+```
+# 9. AFINN-da Monthly Trends
+```{r plot_afinn_sentiment_bar, echo=FALSE}
+schleswig_sentiment_monthly <- schleswig_sentiment_monthly %>%
+  mutate(sentiment_color = ifelse(sentiment_score > 0, "forestgreen", "darkred"))
+ggplot(schleswig_sentiment_monthly, aes(x = month, y = sentiment_score, fill = sentiment_color)) +
+  geom_bar(stat = "identity") +
+  scale_fill_identity() +  
+  labs(title = "Monthly Sentiment Score",
+       subtitle = "Calculated with AFINN-da",
+       x = "Month",
+       y = "Sentiment Score") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+
+
+```{r sentiment_over_time}
+ggplot(schleswig_sentiment_monthly, aes(x = month, y = sentiment_score)) +
+  geom_line(color = "orange") +
+  geom_point(color = "brown") +
+  theme_minimal() +
+  labs(
+    title = "Sentiment Score Over Time (Monthly)",
+    subtitle = "Calculated with AFINN-da",
+    x = "Month",
+    y = "Total Sentiment Score")
+```
+
+# 10. AFINN-da Comparison by War Period
+```{r add_war_period_and_date_info}
+
+##Define reusable function
+prepare_data <- function(df,period) {
+  df %>% 
+    mutate(
+      war= period,
+      timestamp = ymd_hms(timestamp),
+      month =floor_date(timestamp, "month")
+    )
+}
+#Applying the function
+schleswig_tidy_1848_51 <- prepare_data(schleswig_tidy_1848_51, "1848-1851")
+schleswig_tidy_1864_65 <- prepare_data(schleswig_tidy_1864_65, "1864-1865")
+
+
+# Combining the two datasets
+combined_sentiment_data <- bind_rows(schleswig_tidy_1848_51, schleswig_tidy_1864_65)
+```
+
+
+```{r join_with_afinn_and_calc_monthly_score}
+combined_sentiment_scores <- combined_sentiment_data %>%
+  inner_join(afinn_da, by = "word") %>%
+  group_by(month, war) %>%
+  summarise(sentiment_score = sum(score), .groups = "drop")
+```
+
+
+```{r visualize_comparison_afinn}
+ggplot(combined_sentiment_scores, aes(x = month, y = sentiment_score, color = war)) +
+  geom_line(size = 1.2) +
+  geom_point(size = 1.5) +
+  labs(
+    title = "Comparison of Monthly Sentiment Score for the Schleswig Wars",
+    subtitle = "Calculated using AFINN-da dictionary",
+    x = "Month",
+    y = "Sentiment-score",
+    color = "War Period"
+  ) +
+  theme_minimal() +
+  scale_color_manual(values = c("1848-1851" = "midnightblue", "1864-1865" = "firebrick1")) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+# 11. Most Frequent Words by War Period
+```{r top_words_by_war_period, echo=FALSE}
+# Count most frequent words in each period
+word_frekvens_1848_51 <- schleswig_tidy_1848_51 %>%
+  count(word, sort = TRUE) %>%
+  top_n(20)
+
+word_frekvens_1864_65 <- schleswig_tidy_1864_65 %>%
+  count(word, sort = TRUE) %>%
+  top_n(20)
+
+# Visualize with barplots
+
+# For 1848–1851
+ggplot(word_frekvens_1848_51, aes(x = fct_reorder(word, n), y = n)) +
+  geom_col(fill = "midnightblue") +
+  coord_flip() +
+  labs(title = "Top 20 Most Used Words (1848-1851)",
+       x = "Word", y = "Frequency") +
+  theme_minimal()
+
+# For 1864–1865
+ggplot(word_frekvens_1864_65, aes(x = fct_reorder(word, n), y = n)) +
+  geom_col(fill = "firebrick1") +
+  coord_flip() +
+  labs(title = "Top 20 Most Used Words (1864-1865)",
+       x = "Word", y = "Frequency") +
+  theme_minimal()
+```
+
+# 12. Reproducibility Notes
+All data was collected from the Danish State Library Labs API.
+
+Stopwords were obtained from Max Odsbjerg's Gist.
+
+The AFINN-da sentiment dictionary is available at:
+https://raw.githubusercontent.com/fnielsen/afinn/master/afinn/data/AFINN-da-32.txt
+
+The custom Danish sentiment lexicon is available at:
+https://github.com/dsldk/danish-sentiment-lexicon/blob/main/2_headword_headword_polarity.csv
+
+All scripts and supporting files are hosted in our GitHub repository: [GitHub link placeholder]
