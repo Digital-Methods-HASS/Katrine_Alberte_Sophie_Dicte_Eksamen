@@ -65,20 +65,15 @@ schleswig_1848_65 <- read_csv(link48_65)
 # 4. Text Preprocessing
 We normalize text, tokenize, and remove stopwords:
 ```{r preprocess_text, echo=FALSE}
-schleswig_tidy_1848_51 <- schleswig_1848_51 %>%
-  mutate(fulltext_org=str_squish(str_to_lower(fulltext_org))) %>% 
-  unnest_tokens(word, fulltext_org) %>%
-  anti_join(stopword_1800)
+preprocess_text <- function(data) {
+  data %>%
+    mutate(fulltext_org = str_squish(str_to_lower(fulltext_org))) %>%
+    unnest_tokens(word, fulltext_org) %>%
+    anti_join(stopword_1800)}
 
-schleswig_tidy_1864_65 <- schleswig_1864_65 %>%
-  mutate(fulltext_org=str_squish(str_to_lower(fulltext_org))) %>%
-  unnest_tokens(word, fulltext_org) %>% 
-  anti_join(stopword_1800)
-
-schleswig_tidy_1848_65 <- schleswig_1848_65 %>%
-  mutate(fulltext_org=str_squish(str_to_lower(fulltext_org))) %>% 
-  unnest_tokens(word, fulltext_org) %>% 
-  anti_join(stopword_1800)
+schleswig_tidy_1848_51 <- preprocess_text(schleswig_1848_51)
+schleswig_tidy_1864_65 <- preprocess_text(schleswig_1864_65)
+schleswig_tidy_1848_65 <- preprocess_text(schleswig_1848_65)
 ```
 
 # 5. Sentiment Analysis Using the Custom Danish Lexicon
@@ -207,9 +202,7 @@ prepare_data <- function(df,period) {
     mutate(
       war= period,
       timestamp = ymd_hms(timestamp),
-      month =floor_date(timestamp, "month")
-    )
-}
+      month =floor_date(timestamp, "month"))}
 #Applying the function
 schleswig_tidy_1848_51 <- prepare_data(schleswig_tidy_1848_51, "1848-1851")
 schleswig_tidy_1864_65 <- prepare_data(schleswig_tidy_1864_65, "1864-1865")
