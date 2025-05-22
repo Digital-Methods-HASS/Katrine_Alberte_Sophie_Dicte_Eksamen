@@ -1,0 +1,1 @@
+This is the exam group for Digital Archives and Methods spring semester 2025. The group consists of Alberte Mathilde Nordgren Thomsen, Katrine Stabelfeldt Kjeldsgaard Pedersen, Sophie Løbner and Dicte Mikkelsen.
