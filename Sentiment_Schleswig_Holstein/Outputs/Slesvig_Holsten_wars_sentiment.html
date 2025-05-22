@@ -11,7 +11,7 @@
 
 <meta name="author" content="Dicte Mikkelsen, Alberte Thomsen, Sophie Løbner &amp; Katrine Pedersen" />
 
-<meta name="date" content="2025-05-15" />
+<meta name="date" content="2025-05-22" />
 
 <title>Schleswig-Holstein Wars Sentiment</title>
 
@@ -353,7 +353,7 @@ display: none;
 <h1 class="title toc-ignore">Schleswig-Holstein Wars Sentiment</h1>
 <h4 class="author">Dicte Mikkelsen, Alberte Thomsen, Sophie Løbner &amp;
 Katrine Pedersen</h4>
-<h4 class="date">2025-05-15</h4>
+<h4 class="date">2025-05-22</h4>
 
 </div>
 
@@ -497,9 +497,7 @@ prepare_data &lt;- function(df,period) {
     mutate(
       war= period,
       timestamp = ymd_hms(timestamp),
-      month =floor_date(timestamp, &quot;month&quot;)
-    )
-}
+      month =floor_date(timestamp, &quot;month&quot;))}
 #Applying the function
 schleswig_tidy_1848_51 &lt;- prepare_data(schleswig_tidy_1848_51, &quot;1848-1851&quot;)
 schleswig_tidy_1864_65 &lt;- prepare_data(schleswig_tidy_1864_65, &quot;1864-1865&quot;)
